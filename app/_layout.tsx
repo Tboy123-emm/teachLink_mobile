@@ -6,7 +6,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import '../global.css'; // NativeWind CSS
+import { MemoryProfilerOverlay } from '../components/DevTools';
 import { RetryErrorBoundary } from '../components/ErrorBoundary/RetryErrorBoundary';
+
 import { AnalyticsProvider, ErrorBoundary, OfflineIndicatorProvider } from '../src/components';
 import { useAnalytics } from '../src/hooks';
 import { useDeepLink } from '../src/hooks/useDeepLink';
@@ -15,10 +17,9 @@ import { useAppStore } from '../src/store';
 import { getPathFromDeepLink } from '../src/utils/linkParser';
 import { prefetchExternalResources } from '../src/utils/resourceHints';
 
-// Kick off resource hints as early as possible — fire-and-forget, never blocks startup.
+// Kick off resource hints early
 prefetchExternalResources();
 
-// Component to handle auto screen tracking and session state persistence
 const ScreenTracker = () => {
   const pathname = usePathname();
   const segments = useSegments();
@@ -28,7 +29,7 @@ const ScreenTracker = () => {
   useEffect(() => {
     if (pathname) {
       trackScreen(pathname, { segments: segments.join('/') });
-      // Persist route only on actual navigation changes (not the initial mount duplicate)
+
       if (prevPathname.current !== pathname) {
         prevPathname.current = pathname;
         sessionRestorationService.saveRoute(pathname);
@@ -39,7 +40,6 @@ const ScreenTracker = () => {
   return null;
 };
 
-// Sync global theme to NativeWind colorScheme
 const ThemeSync = () => {
   const { theme } = useAppStore();
   const { setColorScheme } = useColorScheme();
@@ -66,7 +66,6 @@ const RootLayout = () => {
 
   useDeepLink(handleDeepLink);
 
-  // Begin session and detect crash on mount
   useEffect(() => {
     let cancelled = false;
 
@@ -80,7 +79,7 @@ const RootLayout = () => {
       if (cancelled || !snapshot) return;
 
       const age = Date.now() - snapshot.timestamp;
-      // Ignore stale snapshots (> 1 hour old)
+
       if (age > 3600_000) {
         await sessionRestorationService.clearSnapshot();
         return;
@@ -116,28 +115,9 @@ const RootLayout = () => {
 
   return (
     <ErrorBoundary boundaryName="RootLayout">
+      {/* ✅ Wrap with RetryErrorBoundary */}
       <RetryErrorBoundary>
         <AnalyticsProvider>
           <ScreenTracker />
           <ThemeSync />
-          <OfflineIndicatorProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <Stack>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="course-viewer" options={{ headerShown: false }} />
-                <Stack.Screen name="profile/[userId]" options={{ headerShown: false }} />
-                <Stack.Screen name="search" options={{ headerShown: false }} />
-                <Stack.Screen name="settings" options={{ headerShown: false }} />
-                <Stack.Screen name="qr-scanner" options={{ headerShown: false }} />
-                <Stack.Screen name="quiz" options={{ headerShown: false }} />
-                <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-              </Stack>
-            </GestureHandlerRootView>
-          </OfflineIndicatorProvider>
-        </AnalyticsProvider>
-      </RetryErrorBoundary>
-    </ErrorBoundary>
-  );
-};
 
-export default RootLayout;

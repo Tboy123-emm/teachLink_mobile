@@ -28,6 +28,7 @@ import { handleCacheVersionUpdate } from './src/utils/cacheVersioning';
 import { requireEnvVariables } from './src/utils/env';
 import { appLogger } from './src/utils/logger';
 import { handleNotificationReceived } from './src/utils/notificationHandlers';
+import { initWebVitals } from './src/utils/webVitals';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -43,6 +44,9 @@ requireEnvVariables();
 initializeLogging().catch(err => {
   console.error('[App] Failed to initialize logging:', err);
 });
+
+// Initialize Core Web Vitals monitoring (web platform only)
+initWebVitals();
 
 if (__DEV__) {
   appLogger.infoSync('Development mode: centralized logger active');

@@ -35,7 +35,6 @@ yarn-error.*
 *.pem
 
 # local env files
-.env
 .env*.local
 
 # typescript
@@ -43,7 +42,6 @@ yarn-error.*
 
 # IDE
 .idea/
-.vscode/
 .vs/
 *.swp
 *.swo
@@ -86,3 +84,4 @@ GoogleService-Info.plist
 *.md
 !README.md
 !docs/**/*.md
+config.bat

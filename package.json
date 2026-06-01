@@ -3,7 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.10.0",
   "scripts": {
-    "start": "expo start",
+    "start": "node init && expo start",
     "subset-fonts": "python scripts/subset-fonts.py",
     "eas-build-pre-install": "pip install fonttools && python scripts/subset-fonts.py",
     "reset-project": "node ./scripts/reset-project.js",
@@ -20,10 +20,10 @@
     "test:perf": "jest --testPathPattern=perf --runInBand",
     "test:perf:watch": "jest --testPathPattern=perf --watch",
     "test:perf:coverage": "jest --testPathPattern=perf --coverage",
-    "build:android": "eas build --platform android --profile production",
-    "build:ios": "eas build --platform ios --profile production",
-    "build:preview": "eas build --platform all --profile preview",
-    "build:dev": "eas build --platform all --profile development",
+    "build:android": "node init && eas build --platform android --profile production",
+    "build:ios": "node init && eas build --platform ios --profile production",
+    "build:preview": "node init && eas build --platform all --profile preview",
+    "build:dev": "node init && eas build --platform all --profile development",
     "submit:android": "eas submit --platform android --profile production",
     "submit:ios": "eas submit --platform ios --profile production",
     "deploy:android": "bash ./scripts/deploy-android.sh",
@@ -52,7 +52,10 @@
     "perf:regression": "node scripts/checkPerfRegression.js",
     "perf:update-baseline": "node scripts/updatePerfBaseline.js",
     "size-limit": "size-limit",
-    "build": "npx expo export --platform all"
+    "build": "node init && npx expo export --platform all",
+    "ci:monitor": "node scripts/monitorCIBuildTimes.js",
+    "ci:monitor:report": "node scripts/monitorCIBuildTimes.js --report",
+    "ci:monitor:json": "node scripts/monitorCIBuildTimes.js --json"
   },
   "size-limit": [
     {

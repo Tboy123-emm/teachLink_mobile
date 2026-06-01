@@ -36,6 +36,8 @@ export enum AnalyticsEvent {
 
   // Performance & Infrastructure
   PERFORMANCE_METRIC = 'performance_metric',
+  REACT_PROFILER_RENDER = 'react_profiler_render',
+  REACT_PROFILER_SLOW_RENDER = 'react_profiler_slow_render',
   AB_ASSIGNMENT = 'ab_assignment',
   AB_EXPOSURE = 'ab_exposure',
   API_ERROR = 'api_error',
@@ -82,6 +84,10 @@ export enum PerformanceMetric {
   APP_LOAD_TIME = 'app_load_time',
   SCREEN_TRANSITION_TIME = 'screen_transition_time',
   API_RESPONSE_TIME = 'api_response_time',
+
+  // React Profiler
+  RENDER_DURATION = 'render_duration',
+  NAVIGATION_LATENCY = 'navigation_latency',
 
   // Core Web Vitals
   LCP = 'lcp',

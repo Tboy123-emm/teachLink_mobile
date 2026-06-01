@@ -1,61 +1,42 @@
+import './src/utils/assetInlinePolyfill';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
-import { Alert, AppState, AppStateStatus, LogBox } from 'react-native';
+import { Alert, AppState, AppStateStatus, InteractionManager, LogBox } from 'react-native';
 
-import StorybookUI from './.rnstorybook';
 import './global.css';
 
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { ErrorBoundary } from './src/components/common/ErrorBoundary';
-import { requireEnvVariables } from './src/config';
 import { initializeLogging } from './src/config/logging';
 import { AuthProvider, useAdaptiveTheme } from './src/hooks';
 import AppNavigator from './src/navigation/AppNavigator';
-import { setupNotificationNavigation } from './src/navigation/linking';
-import { apiClient } from './src/services/api';
-import { crashReportingService } from './src/services/cashReporting';
-import { memoryPressureService } from './src/services/memoryPressureService';
-import { mobileAuthService } from './src/services/mobileAuth';
-import {
-    addNotificationReceivedListener,
-    getLastNotificationResponse,
-    registerForPushNotifications, registerTokenWithBackend,
-    removeNotificationListener,
-} from './src/services/pushNotifications';
-import { requestQueue } from './src/services/requestQueue';
-import { initializeSecureStorage } from './src/services/secureStorage';
-import socketService from './src/services/socket';
-import syncService from './src/services/syncService';
-import { useAppStore } from './src/store';
-import { useNotificationStore } from './src/store/notificationStore';
 import { warmCriticalCaches } from './src/services/cacheWarming';
-import webVitalsService from './src/services/webVitals';
+import { mobileAuthService } from './src/services/mobileAuth';
+import socketService from './src/services/socket';
+import { useAppStore } from './src/store';
 import { handleCacheVersionUpdate } from './src/utils/cacheVersioning';
 import { appLogger, logger } from './src/utils/logger';
 import { handleNotificationReceived } from './src/utils/notificationHandlers';
-import { warmCriticalCaches } from './src/services/cacheWarming';
+import { prefetchExternalResources } from './src/utils/resourceHints';
+import { mobileAnalyticsService } from './src/services/mobileAnalytics';
+import { sentryContextService } from './src/services/sentryContext';
+import { flushLogQueue } from './src/config/logging';
+import { AnalyticsEvent, PerformanceMetric } from './src/utils/trackingEvents';
+import { batteryService } from './src/services/batteryService';
+import { startupProgressService } from './src/services/startupProgressService';
+import { StartupProgressOverlay } from './src/components/common/StartupProgressOverlay';
+
+const appStartTime = Date.now();
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
-// SHOW_STORYBOOK flag based on environment variable
-const SHOW_STORYBOOK = process.env.EXPO_PUBLIC_STORYBOOK === 'true';
-
-
-// Centralized structured logging initialized on startup
-requireEnvVariables();
+// Centralized structured logging initialized lazily in services bootstrap useEffect
+// requireEnvVariables();
 
 // Preconnect to API hosts and external resources
 prefetchExternalResources();
-
-// Initialize centralized logging on app start
-initializeLogging().catch(err => {
-  console.error('[App] Failed to initialize logging:', err);
-});
-
-// Start Core Web Vitals monitoring
-webVitalsService.init();
 
 if (__DEV__) {
   appLogger.infoSync('Development mode: centralized logger active');
@@ -122,6 +103,19 @@ const App = () => {
         setAppIsReady(true);
         startupProgressService.setInitializing(false);
         await SplashScreen.hideAsync();
+
+        // Track cold start metric
+        const coldStartDuration = Date.now() - appStartTime;
+        mobileAnalyticsService.trackEvent(AnalyticsEvent.PERFORMANCE_METRIC, {
+          metric_name: PerformanceMetric.APP_LOAD_TIME,
+          metric_value: coldStartDuration,
+          launch_type: 'cold',
+        });
+        appLogger.infoSync(`[App] Cold start completed in ${coldStartDuration}ms`);
+
+        // Record app launch breadcrumb so every Sentry event has launch context
+        sentryContextService.trackAppLifecycle('launch');
+        sentryContextService.trackAction('app_cold_start', { durationMs: coldStartDuration });
       }
     }
 
@@ -131,73 +125,22 @@ const App = () => {
   const SESSION_REFRESH_WINDOW_MS = 5 * 60 * 1000;
 
   useEffect(() => {
-    // Initialize crash reporting at app startup
-    crashReportingService.init();
-
-    // Initialize secure storage (Keychain/Keystore) for encrypted token storage
-    initializeSecureStorage().catch((error) => {
-      logger.error('Failed to initialize secure storage:', error);
-      // Continue app startup even if secure storage init fails
-      // (user will be prompted to re-authenticate if needed)
+    // Initialize battery monitoring
+    batteryService.initialize().catch(err => {
+      console.error('[App] Failed to initialize battery service:', err);
     });
 
-    // Add global handler for unhandled promise rejections
-    const unhandledRejectionHandler = (reason: any) => {
-      const error = reason instanceof Error ? reason : new Error(String(reason));
-      appLogger.errorSync('Unhandled Promise Rejection', error);
-      crashReportingService.reportError(error, 'UnhandledPromiseRejection');
-    };
-
-    // Register unhandled rejection listener
-    if (global.onunhandledrejection === undefined) {
-      // @ts-ignore - Setting global error handler
-      global.onunhandledrejection = unhandledRejectionHandler;
-    }
-
-    // Connect to socket when app starts
-    socketService.connect();
-
-    // Start memory pressure protection early
-    memoryPressureService.init();
-
-    // Initialize push notifications: request permissions and get device token
-    registerForPushNotifications().then(async (token) => {
-      if (token) {
-        const { setPushToken, setTokenRegistered } = useNotificationStore.getState();
-        setPushToken(token);
-        const registered = await registerTokenWithBackend(token);
-        setTokenRegistered(registered);
-      }
+    // Lazy load Sentry after core initialization
+    InteractionManager.runAfterInteractions(() => {
+      initializeLogging().catch(err => {
+        console.error('[App] Failed to initialize logging:', err);
+      });
+      // Lazy connect socket.io after core initialization
+      socketService.connect();
     });
 
-    // Start request queue monitoring
-    requestQueue.startMonitoring(apiClient);
-
-    // Initialize and start sync service for background sync
-    syncService.startAutoSync();
-
-    // Set up notification navigation handler
-    const notificationCleanup = setupNotificationNavigation();
-
-    // Listen for notifications received while app is foregrounded
-    const subscription = addNotificationReceivedListener(handleNotificationReceived);
-
-    // Check if app was launched from a notification
-    getLastNotificationResponse().then(response => {
-      if (response) {
-        appLogger.infoSync('App launched from notification', { response });
-      }
-    });
-
-    // Cleanup on unmount
     return () => {
-      socketService.disconnect();
-      syncService.stopAutoSync();
-      notificationCleanup();
-      removeNotificationListener(subscription);
-      // Clean up the unhandled rejection handler
-      // @ts-ignore
-      global.onunhandledrejection = undefined;
+      batteryService.shutdown();
     };
   }, []);
 
@@ -254,9 +197,17 @@ const App = () => {
     const appStateSubscription = AppState.addEventListener('change', nextAppState => {
       const wasInBackground = appStateRef.current.match(/inactive|background/);
       const isForegrounded = nextAppState === 'active';
+      const isBackgrounded = appStateRef.current === 'active' && nextAppState.match(/inactive|background/);
 
       if (wasInBackground && isForegrounded) {
+        sentryContextService.trackAppLifecycle('foreground');
         void checkSessionOnForeground();
+      }
+
+      if (isBackgrounded) {
+        sentryContextService.trackAppLifecycle('background');
+        // Flush queued logs before going to background so nothing is lost
+        void flushLogQueue();
       }
 
       appStateRef.current = nextAppState;
@@ -282,4 +233,9 @@ const App = () => {
   );
 };
 
-export default SHOW_STORYBOOK ? StorybookUI : App;
+const AppEntry = __DEV__ && process.env.EXPO_PUBLIC_STORYBOOK === 'true'
+  ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./.rnstorybook').default
+  : App;
+
+export default AppEntry;
